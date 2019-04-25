@@ -19,6 +19,7 @@ limitations under the License.
 package v1
 
 import (
+	"strings"
 	time "time"
 
 	core_v1 "k8s.io/api/core/v1"
@@ -56,20 +57,22 @@ func NewServiceInformer(client kubernetes.Interface, namespace string, resyncPer
 // one. This reduces memory footprint and number of connections to the server.
 func NewFilteredServiceInformer(client kubernetes.Interface, namespace string, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
-		&cache.ListWatch{
-			ListFunc: func(options meta_v1.ListOptions) (runtime.Object, error) {
-				if tweakListOptions != nil {
-					tweakListOptions(&options)
-				}
-				return client.CoreV1().Services(namespace).List(options)
-			},
-			WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
-				if tweakListOptions != nil {
-					tweakListOptions(&options)
-				}
-				return client.CoreV1().Services(namespace).Watch(options)
-			},
-		},
+		cache.MultiNamespaceListerWatcher(strings.Split(namespace, ","), func(ns string) cache.ListerWatcher {
+			return &cache.ListWatch{
+				ListFunc: func(options meta_v1.ListOptions) (runtime.Object, error) {
+					if tweakListOptions != nil {
+						tweakListOptions(&options)
+					}
+					return client.CoreV1().Services(ns).List(options)
+				},
+				WatchFunc: func(options meta_v1.ListOptions) (watch.Interface, error) {
+					if tweakListOptions != nil {
+						tweakListOptions(&options)
+					}
+					return client.CoreV1().Services(ns).Watch(options)
+				},
+			}
+		}),
 		&core_v1.Service{},
 		resyncPeriod,
 		indexers,
